@@ -6,6 +6,7 @@ This project implements a rule-based eligibility engine where eligibility rules 
 Key capabilities:
 - Compose rules using:
     - **User Attributes** (e.g., income, age, city, credit_score)
+    - **Static Lists** discovered dynamically (e.g., premium_users, blocked_users, employees)
     - **Boolean logic** (AND / OR / NOT), nested
 - Agent behavior:
     - asks clarifying questions when input is ambiguous/incomplete
