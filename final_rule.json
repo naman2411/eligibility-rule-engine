@@ -1,0 +1,50 @@
+{
+  "type": "LOGICAL",
+  "operator": "AND",
+  "rules": [
+    {
+      "type": "LOGICAL",
+      "operator": "AND",
+      "rules": [
+        {
+          "type": "LOGICAL",
+          "operator": "AND",
+          "rules": [
+            {
+              "type": "ATTRIBUTE",
+              "attribute": "income",
+              "operator": ">",
+              "value": 50000
+            },
+            {
+              "type": "ATTRIBUTE",
+              "attribute": "credit_score",
+              "operator": ">=",
+              "value": 700
+            }
+          ],
+          "unaryNot": false
+        },
+        {
+          "type": "LOGICAL",
+          "operator": "NOT",
+          "rules": [
+            {
+              "type": "LIST",
+              "listName": "blocked_users",
+              "inList": true
+            }
+          ],
+          "unaryNot": true
+        }
+      ],
+      "unaryNot": false
+    },
+    {
+      "type": "LIST",
+      "listName": "premium_users",
+      "inList": true
+    }
+  ],
+  "unaryNot": false
+}

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Eligibility Rule Engine</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; margin: 0; }
+
+        #chat-panel {
+            width: 40%;
+            border-right: 1px solid #ccc;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            background-color: #f4f4f9;
+        }
+
+
+        #preview-panel {
+            width: 60%;
+            padding: 20px;
+            background: #2d2d2d;
+            color: #fff;
+            overflow: auto;
+        }
+
+        .user-controls {
+            background: #e2e3e5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid #ccc;
+        }
+
+        select, input[type="text"] {
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #bbb;
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+        }
+
+        .message { margin: 10px 0; padding: 10px; border-radius: 8px; max-width: 80%; line-height: 1.4; }
+
+        .user {
+            background-color: #007bff;
+            color: white;
+            align-self: flex-end;
+            margin-left: auto;
+            text-align: right;
+            border-bottom-right-radius: 0;
+        }
+
+        .bot {
+            background-color: #e9ecef;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+        }
+
+        #userInput { padding: 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px; width: 100%; box-sizing: border-box; }
+
+        .btn-group { display: flex; gap: 10px; }
+
+        button { padding: 12px; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; flex: 1; }
+
+        .btn-send { background: #28a745; color: white; }
+        .btn-send:hover { background: #218838; }
+
+        .btn-finalize { background: #007bff; color: white; }
+        .btn-finalize:hover { background: #0056b3; }
+
+        pre { font-family: 'Consolas', monospace; white-space: pre-wrap; font-size: 14px; }
+        .status-valid { color: #28a745; font-weight: bold; background: rgba(40, 167, 69, 0.1); padding: 5px; border-radius: 4px; }
+        .status-invalid { color: #dc3545; font-weight: bold; background: rgba(220, 53, 69, 0.1); padding: 5px; border-radius: 4px;}
+        .status-final { color: #007bff; font-weight: bold; background: rgba(0, 123, 255, 0.1); padding: 5px; border-radius: 4px; border: 1px solid #007bff; }
+    </style>
+</head>
+<body>
+
+<div id="chat-panel">
+    <h2>Rule Assistant</h2>
+
+    <div class="user-controls">
+        <label><strong>User:</strong></label>
+        <select id="userSelector" onchange="handleUserChange()">
+            <option value="user-alice">Alice (User A)</option>
+            <option value="user-bob">Bob (User B)</option>
+            <option value="user-admin">Admin</option>
+            <option value="custom">-- Custom ID --</option>
+        </select>
+        <input type="text" id="customUserEntry" placeholder="Enter ID..." style="display:none; flex: 1;" onblur="applyCustomUser()" onkeypress="handleCustomEnter(event)">
+    </div>
+
+    <div id="messages">
+        <div class="message bot">Hello! I am ready. Describe a rule.</div>
+    </div>
+
+    <input type="text" id="userInput" placeholder="Type a rule (e.g., income > 50000)..." onkeypress="handleChatEnter(event)">
+
+    <div class="btn-group">
+        <button class="btn-send" onclick="sendMessage()">Send Message</button>
+        <button class="btn-finalize" onclick="finalizeRule()">Finalize Rule</button>
+    </div>
+</div>
+
+<div id="preview-panel">
+    <h3>Live Rule Preview (JSON)</h3>
+    <pre id="jsonPreview">No rule generated yet...</pre>
+
+    <h3>Validation Status</h3>
+    <div id="validationStatus">---</div>
+</div>
+
+<script>
+    let currentSessionId = "user-alice";
+
+    window.onload = function() {
+        switchUser();
+    };
+
+
+    function handleUserChange() {
+        const selector = document.getElementById("userSelector");
+        const customInput = document.getElementById("customUserEntry");
+
+        if (selector.value === "custom") {
+            customInput.style.display = "block";
+            customInput.focus();
+        } else {
+            customInput.style.display = "none";
+            currentSessionId = selector.value;
+            switchUser();
+        }
+    }
+
+    function applyCustomUser() {
+        const val = document.getElementById("customUserEntry").value.trim();
+        if (val !== "") {
+            currentSessionId = val;
+            switchUser();
+        }
+    }
+
+    function handleCustomEnter(e) {
+        if(e.key === 'Enter') { applyCustomUser(); document.getElementById('userInput').focus(); }
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('userInput');
+        const text = input.value;
+        if (!text) return;
+
+        addMessageToUI(text, 'user');
+        input.value = '';
+
+        try {
+            const response = await fetch('http://localhost:8080/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ sessionId: currentSessionId, message: text })
+            });
+
+            const data = await response.json();
+            addMessageToUI(data.reply, 'bot');
+
+            if (data.currentRule) {
+                updatePreview(data.currentRule, data.validationErrors);
+            }
+        } catch (error) {
+            console.error(error);
+            addMessageToUI("Error connecting to server!", 'bot');
+        }
+    }
+
+
+    async function finalizeRule() {
+        if (!confirm("Are you sure you want to lock and publish this rule?")) return;
+
+        try {
+            const response = await fetch('http://localhost:8080/api/finalize', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ sessionId: currentSessionId, message: "" })
+            });
+
+            const raw = await response.text();
+            console.log("Finalize status:", response.status);
+            console.log("Finalize raw:", raw);
+
+            let data;
+            try { data = JSON.parse(raw); } catch { data = null; }
+
+            if (!response.ok || !data) {
+                document.getElementById('jsonPreview').innerText = raw;
+                document.getElementById('validationStatus').innerHTML =
+                    '<span class="status-invalid">❌ FINALIZE FAILED</span>';
+                addMessageToUI("❌ Finalize failed. See preview/console.", "bot");
+                return;
+            }
+
+            console.log("Finalize keys:", Object.keys(data));
+
+            if (data.success) {
+                addMessageToUI("✅ " + data.message, "bot");
+
+
+                document.getElementById('jsonPreview').innerText =
+                    JSON.stringify(JSON.parse(data.finalRuleJson), null, 2);
+
+                document.getElementById('validationStatus').innerHTML =
+                    '<span class="status-final">🔒 FINALIZED & EXPORTED</span>';
+            } else {
+                addMessageToUI("❌ " + (data.message ?? "Finalize returned success=false"), "bot");
+                document.getElementById('jsonPreview').innerText = data.validationReportJson ?? raw;
+                document.getElementById('validationStatus').innerHTML =
+                    '<span class="status-invalid">❌ INVALID</span>';
+            }
+        } catch (e) {
+            console.error(e);
+            addMessageToUI("Error finalizing rule.", "bot");
+        }
+    }
+
+    async function switchUser() {
+        const chatBox = document.getElementById('messages');
+        chatBox.innerHTML = '';
+
+        try {
+            const response = await fetch(`http://localhost:8080/api/history?sessionId=${currentSessionId}`);
+            const data = await response.json();
+
+
+            chatBox.innerHTML = '';
+
+
+            if (data.history && data.history.length > 0) {
+                data.history.forEach(msg => {
+                    const cssClass = (msg.sender === "User") ? "user" : "bot";
+                    addMessageToUI(msg.text, cssClass);
+                });
+            } else {
+                addMessageToUI(`Hello ${currentSessionId}! Start a new rule.`, "bot");
+            }
+            if (data.currentDraftRule) {
+                updatePreview(data.currentDraftRule, null);
+            } else {
+                document.getElementById('jsonPreview').innerText = "No rule generated yet...";
+                document.getElementById('validationStatus').innerText = "---";
+            }
+        } catch (error) {
+            console.error("Failed to load history", error);
+        }
+    }
+
+
+    function addMessageToUI(text, senderClass) {
+        const div = document.createElement('div');
+        div.className = 'message ' + senderClass.toLowerCase();
+        div.innerText = text;
+        const container = document.getElementById('messages');
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function updatePreview(ruleNode, errors) {
+        document.getElementById('jsonPreview').innerText = JSON.stringify(ruleNode, null, 2);
+        const statusDiv = document.getElementById('validationStatus');
+
+        if (!errors || errors.length === 0) {
+            statusDiv.innerHTML = '<span class="status-valid">✅ VALID DRAFT</span>';
+        } else {
+            statusDiv.innerHTML = '<span class="status-invalid">❌ INVALID:</span><br>' + errors.join("<br>");
+        }
+    }
+
+    function handleChatEnter(e) {
+        if(e.key === 'Enter') sendMessage();
+    }
+</script>
+
+</body>
+</html>
